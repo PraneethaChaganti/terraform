@@ -1,0 +1,54 @@
+pipeline {
+	agent any
+	stages {  
+		stage('terraform steps') {
+			steps {
+				
+                withCredentials([
+                    string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN')
+                ]) {
+
+                    withEnv([
+                        "VAULT_ADDR=http://172.18.0.3:8200"
+                    ]) {
+                         retry(3) {
+                            sh '''
+                                echo $VAULT_TOKEN
+                                echo "VAULT_ADDR=$VAULT_ADDR"
+                                curl -v $VAULT_ADDR/v1/sys/health || true
+                                export TF_PLUGIN_CACHE_DIR=/var/jenkins_home/.terraform.d/plugin-cache
+                                mkdir -p $TF_PLUGIN_CACHE_DIR
+                                set -e
+                                echo "Checking Vault environment..."
+                                env | grep VAULT_ADDR
+                                if [ -z "$VAULT_TOKEN" ]; then
+                                echo "ERROR: VAULT_TOKEN is empty"
+                                exit 1
+                                fi
+                                echo "VAULT_TOKEN is present"
+                                curl -s $VAULT_ADDR/v1/sys/health
+                                rm -rf .terraform
+                                rm -rf .terraform.lock.hcl
+                                export VAULT_ADDR
+                                export VAULT_TOKEN=$VAULT_TOKEN
+                                env | grep VAULT
+                                curl -s -H "X-Vault-Token: $VAULT_TOKEN" $VAULT_ADDR/v1/auth/token/lookup-self
+                                CREDS=$(curl -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/aws/creds/app-role")
+                                export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.data.access_key')
+                                export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.data.secret_key')
+                                aws configure list
+                                sleep 20
+                                env | grep AWS
+                                aws sts get-caller-identity --no-cli-pager
+                                terraform init -upgrade
+                                terraform plan -out=tfplan
+                                terraform apply -auto-approve tfplan
+                                aws s3 ls s3://praneetha-tf-state-bucket-123456/ec2/
+                            '''
+                        }
+                    }
+                }
+			}
+		}
+	}
+}
