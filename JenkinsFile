@@ -61,7 +61,11 @@ pipeline {
                             # run-all tracks directory dependencies automatically
                             terragrunt run-all plan -out=tgplan --terragrunt-non-interactive
                             terragrunt run-all apply tgplan --terragrunt-non-interactive
-                            
+                            terraform init -upgrade
+                            terraform fmt -check -recursive
+                            terragrunt run-all validate
+                            terraform plan -out=tfplan
+                            terraform apply -auto-approve tfplan
                             echo "=== Verifying Deployment State ==="
                             aws s3 ls s3://praneetha-tf-state-bucket-123456/ec2/
                         '''
