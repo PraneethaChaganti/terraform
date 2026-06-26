@@ -22,7 +22,7 @@ pipeline {
             steps {
                 echo '=== Running Checkov Static Analysis ==='
                 // Scans directory for misconfigurations. Remove --soft-fail if you want strict pipeline breaks.
-                sh 'checkov -d . --framework terraform --soft-fail'
+                sh '/root/.local/bin/checkov -d . --framework terraform --soft-fail'
             }
         }
 
