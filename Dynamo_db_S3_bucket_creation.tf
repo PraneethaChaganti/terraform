@@ -15,6 +15,10 @@ provider "aws" {
 	region = "us-east-1"
 } 
 
+resource "aws_kms_key" "dynamodb" {
+  description = "KMS key for DynamoDB"
+}
+
 resource aws_dynamodb_table "dynamodb_table" {
   name         = "dynamo-db-table-terraform-state-locking"
   billing_mode = "PAY_PER_REQUEST"
@@ -27,7 +31,65 @@ resource aws_dynamodb_table "dynamodb_table" {
   Environment = "Production"
   ManagedBy   = "Terraform"
 	}
+  server_side_encryption {
+    enabled     = true
+    kms_key_arn = aws_kms_key.dynamodb.arn
+  }
 }
+
+point_in_time_recovery {
+  enabled = true
+}
+
+resource "aws_s3_bucket_public_access_block" "block" {
+  bucket = aws_s3_bucket.bucket.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_versioning" "versioning" {
+  bucket = aws_s3_bucket.bucket.id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_logging" "logging" {
+  bucket = aws_s3_bucket.bucket.id
+
+  target_bucket = aws_s3_bucket.log_bucket.id
+  target_prefix = "logs/"
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "encryption" {
+  bucket = aws_s3_bucket.bucket.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.s3.arn
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "life" {
+  bucket = aws_s3_bucket.bucket.id
+
+  rule {
+    id     = "cleanup"
+    status = "Enabled"
+
+    expiration {
+      days = 30
+    }
+  }
+}
+
+#checkov:skip=CKV_AWS_144: Cross-region replication is intentionally not enabled for this Terraform state bucket.
 
 resource "aws_s3_bucket" "bucket" {
   bucket = "s3-bucket-terraform-state-file-storing"
