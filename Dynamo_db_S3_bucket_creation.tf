@@ -16,7 +16,8 @@ provider "aws" {
 } 
 
 resource "aws_kms_key" "dynamodb" {
-  description = "KMS key for DynamoDB"
+  description         = "KMS key for DynamoDB"
+  enable_key_rotation = true
 }
 
 resource aws_dynamodb_table "dynamodb_table" {
@@ -35,11 +36,12 @@ resource aws_dynamodb_table "dynamodb_table" {
     enabled     = true
     kms_key_arn = aws_kms_key.dynamodb.arn
   }
-}
-
-point_in_time_recovery {
+  point_in_time_recovery {
   enabled = true
 }
+}
+
+
 
 resource "aws_s3_bucket_public_access_block" "block" {
   bucket = aws_s3_bucket.bucket.id
@@ -86,11 +88,14 @@ resource "aws_s3_bucket_lifecycle_configuration" "life" {
     expiration {
       days = 30
     }
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 7
+    }
   }
 }
 
 #checkov:skip=CKV_AWS_144: Cross-region replication is intentionally not enabled for this Terraform state bucket.
-
+#checkov:skip=CKV2_AWS_62: Event notifications are not required for a Terraform backend bucket.
 resource "aws_s3_bucket" "bucket" {
   bucket = "s3-bucket-terraform-state-file-storing"
 }
@@ -99,7 +104,7 @@ resource "aws_s3_bucket_ownership_controls" "bucket_ownership" {
   bucket = aws_s3_bucket.bucket.id
 
   rule {
-    object_ownership = "BucketOwnerPreferred"
+    object_ownership = "BucketOwnerEnforced"
   }
 }
 
