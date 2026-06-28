@@ -22,6 +22,7 @@ pipeline {
             steps {
                 echo '=== Running Checkov Static Analysis ==='
                 // Scans directory for misconfigurations. Remove --soft-fail if you want strict pipeline breaks.
+                sh 'cat Dynamo_db_S3_bucket_creation.tf'
                 sh '/root/.local/bin/checkov -d . --framework terraform --soft-fail'
             }
         }
