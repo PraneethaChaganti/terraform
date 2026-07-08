@@ -62,9 +62,29 @@ resource "aws_sns_topic" "terraform_state_notifications" {
   kms_master_key_id = aws_kms_key.sns.arn
 }
 
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_policy_document" "sns_kms" {
+  statement {
+    sid    = "EnableRootPermissions"
+    effect = "Allow"
+
+    principals {
+      type        = "AWS"
+      identifiers = [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+      ]
+    }
+
+    actions = ["kms:*"]
+    resources = ["*"]
+  }
+}
+
 resource "aws_kms_key" "sns" {
   description         = "KMS key for SNS topic"
   enable_key_rotation = true
+  policy              = data.aws_iam_policy_document.sns_kms.json
 }
 
 resource "aws_sns_topic_subscription" "email" {
