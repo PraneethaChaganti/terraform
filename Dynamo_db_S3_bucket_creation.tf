@@ -59,6 +59,12 @@ resource aws_dynamodb_table "dynamodb_table" {
 
 resource "aws_sns_topic" "terraform_state_notifications" {
   name = "terraform-state-notifications"
+  kms_master_key_id = aws_kms_key.sns.arn
+}
+
+resource "aws_kms_key" "sns" {
+  description         = "KMS key for SNS topic"
+  enable_key_rotation = true
 }
 
 resource "aws_sns_topic_subscription" "email" {
