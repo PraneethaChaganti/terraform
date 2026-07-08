@@ -16,8 +16,24 @@ provider "aws" {
 } 
 
 resource "aws_kms_key" "dynamodb" {
-  description         = "KMS key for DynamoDB"
-  enable_key_rotation = true
+  description             = "KMS key for DynamoDB"
+  enable_key_rotation     = true
+  deletion_window_in_days = 30
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid = "Enable IAM User Permissions"
+        Effect = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::123456789012:root"
+        }
+        Action = "kms:*"
+        Resource = "*"
+      }
+    ]
+  })
 }
 
 resource aws_dynamodb_table "dynamodb_table" {
@@ -41,7 +57,62 @@ resource aws_dynamodb_table "dynamodb_table" {
 }
 }
 
+resource "aws_sns_topic" "terraform_state_notifications" {
+  name = "terraform-state-notifications"
+}
 
+resource "aws_sns_topic_subscription" "email" {
+  topic_arn = aws_sns_topic.terraform_state_notifications.arn
+  protocol  = "email"
+  endpoint  = "your-email@example.com"
+}
+
+resource "aws_sns_topic_policy" "allow_s3_publish" {
+  arn = aws_sns_topic.terraform_state_notifications.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Sid    = "AllowS3Publish"
+        Effect = "Allow"
+
+        Principal = {
+          Service = "s3.amazonaws.com"
+        }
+
+        Action = "SNS:Publish"
+
+        Resource = aws_sns_topic.terraform_state_notifications.arn
+
+        Condition = {
+          ArnEquals = {
+            "aws:SourceArn" = aws_s3_bucket.bucket.arn
+          }
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_s3_bucket_notification" "terraform_state_notification" {
+  bucket = aws_s3_bucket.bucket.id
+
+  topic {
+    topic_arn = aws_sns_topic.terraform_state_notifications.arn
+
+    events = [
+      "s3:ObjectCreated:*"
+    ]
+
+    filter_suffix = ".tfstate"
+  }
+
+  depends_on = [
+    aws_sns_topic_policy.allow_s3_publish
+  ]
+}
 
 resource "aws_s3_bucket_public_access_block" "block" {
   bucket = aws_s3_bucket.bucket.id
@@ -94,8 +165,6 @@ resource "aws_s3_bucket_lifecycle_configuration" "life" {
   }
 }
 
-#checkov:skip=CKV_AWS_144: Cross-region replication is intentionally not enabled for this Terraform state bucket.
-#checkov:skip=CKV2_AWS_62: Event notifications are not required for a Terraform backend bucket.
 resource "aws_s3_bucket" "bucket" {
   bucket = "s3-bucket-terraform-state-file-storing"
 }
