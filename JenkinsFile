@@ -63,7 +63,7 @@ pipeline {
                             echo "=== Executing Terragrunt Run ==="
                             # Terragrunt replaces standard "terraform init/plan/apply"
                             # run-all tracks directory dependencies automatically
-                            terragrunt run-all plan -out=tgplan --terragrunt-non-interactive
+                            terragrunt run-all plan --terragrunt-non-interactive -out=tgplan
                             terragrunt run-all apply tgplan --terragrunt-non-interactive
                             terraform init -upgrade
                             terraform fmt -check -recursive
