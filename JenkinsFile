@@ -54,7 +54,9 @@ pipeline {
                             export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.data.access_key')
                             export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.data.secret_key')
                             unset AWS_SESSION_TOKEN
-                            
+                            aws configure list
+                            sleep 20
+                            env | grep AWS
                             # Validate credentials against AWS STS
                             aws sts get-caller-identity --no-cli-pager
                             
