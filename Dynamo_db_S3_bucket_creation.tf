@@ -3,7 +3,7 @@ module "versioning" {
 }
 
 terraform {
-    required_version = "~> 1.12.0"
+    required_version = "~> 1.6.6"
 
 	required_providers {
 		aws = {
