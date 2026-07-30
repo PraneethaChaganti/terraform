@@ -22,8 +22,8 @@ pipeline {
                     mkdir -p $TG_DOWNLOAD_DIR
 
                     cat > $TF_CLI_CONFIG_FILE <<EOF
-plugin_cache_dir = "$TF_PLUGIN_CACHE_DIR"
-EOF
+                    plugin_cache_dir = "$TF_PLUGIN_CACHE_DIR"
+                    EOF
                 '''
             }
         }
@@ -93,16 +93,16 @@ EOF
                         aws sts get-caller-identity
 
                         echo "=== Terragrunt Init ==="
-                        terragrunt run --all init --non-interactive
+                        terraform init -upgrade
 
                         echo "=== Validate ==="
-                        terragrunt run --all validate --non-interactive
+                        terraform validate
 
                         echo "=== Plan ==="
-                        terragrunt run --all plan --non-interactive
+                        terraform plan -out=tfplan
 
                         echo "=== Apply ==="
-                        terragrunt run --all apply --non-interactive
+                        terraform apply -auto-approve tfplan
 
                         echo "=== Verify S3 Backend ==="
                         aws s3 ls s3://praneetha-tf-state-bucket-123456/ec2/
