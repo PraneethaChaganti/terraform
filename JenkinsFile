@@ -1,35 +1,56 @@
 pipeline {
     agent any
-    
+
     environment {
-        // Centralized configuration environment variables
-        VAULT_ADDR            = "http://172.18.0.3:8200"
-        TF_PLUGIN_CACHE_DIR   = "/var/jenkins_home/.terraform.d/plugin-cache"
-        TF_IN_AUTOMATION      = "true"
-        ANSIBLE_HOST_KEY_CHECKING = "False"
+        VAULT_ADDR                 = "http://172.18.0.3:8200"
+        TF_PLUGIN_CACHE_DIR        = "/var/jenkins_home/.terraform.d/plugin-cache"
+        TF_CLI_CONFIG_FILE         = "/var/jenkins_home/.terraformrc"
+        TG_DOWNLOAD_DIR            = "/var/jenkins_home/.terragrunt-cache"
+        TF_IN_AUTOMATION           = "true"
+        ANSIBLE_HOST_KEY_CHECKING  = "False"
     }
-    
+
     stages {
+
         stage('Initialize Workspace') {
             steps {
                 cleanWs()
                 checkout scm
-                sh "mkdir -p ${TF_PLUGIN_CACHE_DIR}"
+
+                sh '''
+                    mkdir -p $TF_PLUGIN_CACHE_DIR
+                    mkdir -p $TG_DOWNLOAD_DIR
+
+                    cat > $TF_CLI_CONFIG_FILE <<EOF
+plugin_cache_dir = "$TF_PLUGIN_CACHE_DIR"
+EOF
+                '''
+            }
+        }
+
+        stage('Terraform Format') {
+            steps {
+                echo '=== Checking Terraform Formatting ==='
+                sh 'terraform fmt -check -recursive'
             }
         }
 
         stage('Security Scan (Checkov)') {
             steps {
-                echo '=== Running Checkov Static Analysis ==='
-                // Scans directory for misconfigurations. Remove --soft-fail if you want strict pipeline breaks.
-                sh 'cat Dynamo_db_S3_bucket_creation.tf'
-                sh '/root/.local/bin/checkov -d . --framework terraform --soft-fail --skip-check CKV_AWS_144,CKV_AWS_109,CKV_AWS_111,CKV_AWS_356'
+                echo '=== Running Checkov ==='
+                sh '''
+                    /root/.local/bin/checkov \
+                        -d . \
+                        --framework terraform \
+                        --soft-fail \
+                        --skip-check CKV_AWS_144,CKV_AWS_109,CKV_AWS_111,CKV_AWS_356
+                '''
             }
         }
 
         stage('Linting (TFlint)') {
             steps {
-                echo '=== Running TFlint Validation ==='
+                echo '=== Running TFlint ==='
                 sh '''
                     tflint --init
                     tflint
@@ -37,48 +58,60 @@ pipeline {
             }
         }
 
-        stage('Terragrunt Execution') {
+        stage('Terragrunt Plan & Apply') {
             steps {
-                // Injects the Vault Secret token securely
-                withCredentials([string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN')]) {
+
+                withCredentials([
+                    string(credentialsId: 'vault-token', variable: 'VAULT_TOKEN')
+                ]) {
+
                     retry(3) {
+
                         sh '''
-                            set -e
-                            
-                            echo "=== Validating Vault Connectivity ==="
-                            curl -s -H "X-Vault-Token: $VAULT_TOKEN" $VAULT_ADDR/v1/auth/token/lookup-self > /dev/null
-                            
-                            echo "=== Fetching Dynamic AWS Credentials from Vault ==="
-                            CREDS=$(curl -s -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/aws/creds/app-role")
-                            
-                            export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.data.access_key')
-                            export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.data.secret_key')
-                            unset AWS_SESSION_TOKEN
-                            aws configure list
-                            sleep 20
-                            env | grep AWS
-                            # Validate credentials against AWS STS
-                            aws sts get-caller-identity --no-cli-pager
-                            
-                            echo "=== Executing Terragrunt Run ==="
-                            # Terragrunt replaces standard "terraform init/plan/apply"
-                            # run-all tracks directory dependencies automatically
-                            terragrunt run --all plan --non-interactive
-                            terragrunt run --all apply --non-interactive
-                            terraform init -upgrade
-                            terraform fmt -check -recursive
-                            terragrunt run-all validate
-                            terraform plan -out=tfplan
-                            terraform apply -auto-approve tfplan
-                            echo "=== Verifying Deployment State ==="
-                            aws s3 ls s3://praneetha-tf-state-bucket-123456/ec2/
+                        set -e
+
+                        echo "=== Checking Vault ==="
+
+                        curl -sf \
+                            -H "X-Vault-Token: $VAULT_TOKEN" \
+                            $VAULT_ADDR/v1/auth/token/lookup-self >/dev/null
+
+                        echo "=== Getting AWS Credentials ==="
+
+                        CREDS=$(curl -sf \
+                            -H "X-Vault-Token: $VAULT_TOKEN" \
+                            "$VAULT_ADDR/v1/aws/creds/app-role")
+
+                        export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.data.access_key')
+                        export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.data.secret_key')
+                        unset AWS_SESSION_TOKEN
+			aws configure list
+                        sleep 20
+
+                        echo "=== Validate AWS Credentials ==="
+                        aws sts get-caller-identity
+
+                        echo "=== Terragrunt Init ==="
+                        terragrunt run --all init --non-interactive
+
+                        echo "=== Validate ==="
+                        terragrunt run --all validate --non-interactive
+
+                        echo "=== Plan ==="
+                        terragrunt run --all plan --non-interactive
+
+                        echo "=== Apply ==="
+                        terragrunt run --all apply --non-interactive
+
+                        echo "=== Verify S3 Backend ==="
+                        aws s3 ls s3://praneetha-tf-state-bucket-123456/ec2/
                         '''
                     }
                 }
             }
         }
     }
-    
+
     post {
         always {
             cleanWs()
