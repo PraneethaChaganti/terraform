@@ -85,7 +85,7 @@ EOF
                         export AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.data.access_key')
                         export AWS_SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.data.secret_key')
                         unset AWS_SESSION_TOKEN
-			aws configure list
+			            aws configure list
                         sleep 20
 
                         echo "=== Validate AWS Credentials ==="
