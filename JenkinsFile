@@ -31,6 +31,7 @@ EOF
         stage('Terraform Format') {
             steps {
                 echo '=== Checking Terraform Formatting ==='
+                sh 'terraform fmt -recursive'
                 sh 'terraform fmt -check -recursive'
             }
         }
